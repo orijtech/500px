@@ -12,6 +12,7 @@ import (
 	"github.com/orijtech/500px/v1"
 )
 ```
+
 * List photos
 ```go
 func listPhotos() {
@@ -40,6 +41,107 @@ func listPhotos() {
 		}
 
 		if count >= 13 {
+			cancelFn()
+		}
+		fmt.Printf("\n\n")
+	}
+}
+
+* Search for photos
+```go
+func searchForPhotos() {
+	client, err := px500.NewClient()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ps := &px500.PhotoSearch{
+		Term:          "the universe",
+		LimitPerPage:  10,
+		MaxPageNumber: 2,
+	}
+
+	pagesChan, cancelFn, err := client.SearchPhotos(ps)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	count := uint64(0)
+	for page := range pagesChan {
+		fmt.Printf("Page: #%d\n\n", page.PageNumber)
+		if err := page.Err; err != nil {
+			fmt.Printf("err: %v\n", err)
+			continue
+		}
+
+		for i, photo := range page.Photos {
+			count += 1
+			fmt.Printf("#%d: %#v\n\n", i, photo)
+		}
+
+		if count >= 13 {
+			cancelFn()
+		}
+		fmt.Printf("\n\n")
+	}
+}
+```
+
+* Retrieve a photo by ID
+```go
+func findPhotoByID() {
+	client, err := px500.NewClient()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	photo, err := client.PhotoByID("210717663")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("The Photo's info: %#v\n", photo)
+}
+
+```
+
+* Retrieve comments for a photo
+```go
+func retrieveCommentsForPhoto() {
+	client, err := px500.NewClient()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cr := &px500.CommentsRequest{
+		PhotoID: "210717663",
+		Nested:  true,
+	}
+
+	pagesChan, cancelFn, err := client.CommentsForPhoto(cr)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	count := uint64(0)
+	for page := range pagesChan {
+		fmt.Printf("Page: #%d\n\n", page.PageNumber)
+		if err := page.Err; err != nil {
+			fmt.Printf("err: %v\n", err)
+			continue
+		}
+
+		for i, comment := range page.Comments {
+			count += 1
+			fmt.Printf("#%d: %#v\n\n", i, comment)
+			for j, reply := range comment.Replies {
+				fmt.Printf("\t\tReply: #%d reply: %#v\n\n", j, reply)
+			}
+		}
+
+		if count >= 24 {
 			cancelFn()
 		}
 		fmt.Printf("\n\n")
