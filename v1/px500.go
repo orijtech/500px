@@ -331,22 +331,6 @@ type Photo struct {
 	FeaturedInEditorsChoice bool `json:"editors_choice"`
 }
 
-type Comment struct {
-	ID       string   `json:"id"`
-	Body     string   `json:"body"`
-	Author   *Profile `json:"author"`
-	AuthorID string   `json:"user_id"`
-
-	ToWhomUserID string `json:"to_whom_user_id"`
-
-	CreatedAt *time.Time `json:"created_at"`
-	ParentID  string     `json:"parent_id"`
-	Flagged   bool       `json:"flagged"`
-	Rating    uint64     `json:"rating"`
-
-	Voted bool `json:"voted"`
-}
-
 type User struct {
 	ID        int64  `json:"id"`
 	Username  string `json:"username"`

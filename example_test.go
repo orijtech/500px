@@ -105,3 +105,43 @@ func Example_client_PhotoByID() {
 
 	fmt.Printf("The Photo's info: %#v\n", photo)
 }
+
+func Example_client_CommentsForPhoto() {
+	client, err := px500.NewClient()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cr := &px500.CommentsRequest{
+		PhotoID: "210717663",
+		Nested:  true,
+	}
+
+	pagesChan, cancelFn, err := client.CommentsForPhoto(cr)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	count := uint64(0)
+	for page := range pagesChan {
+		fmt.Printf("Page: #%d\n\n", page.PageNumber)
+		if err := page.Err; err != nil {
+			fmt.Printf("err: %v\n", err)
+			continue
+		}
+
+		for i, comment := range page.Comments {
+			count += 1
+			fmt.Printf("#%d: %#v\n\n", i, comment)
+			for j, reply := range comment.Replies {
+				fmt.Printf("\t\tReply: #%d reply: %#v\n\n", j, reply)
+			}
+		}
+
+		if count >= 24 {
+			cancelFn()
+		}
+		fmt.Printf("\n\n")
+	}
+}

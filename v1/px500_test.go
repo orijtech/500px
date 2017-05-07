@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,93 @@ func TestListPhotos(t *testing.T) {
 
 		gotBlob := jsonMarshal(got)
 		wantBlob := jsonMarshal(tt.want)
+		if !bytes.Equal(gotBlob, wantBlob) {
+			t.Errorf("#%d:\ngotBlob:  %s\nwantBlob: %s", i, gotBlob, wantBlob)
+		}
+	}
+}
+
+func TestCommentsForPhoto(t *testing.T) {
+	client, err := px500.NewClient(consumerKey2)
+	if err != nil {
+		t.Fatalf("initializing the client: %v", err)
+	}
+
+	rt := &testBackend{route: commentsForPhotoRoute}
+	client.SetHTTPRoundTripper(rt)
+
+	tests := [...]struct {
+		params  *px500.CommentsRequest
+		wantErr bool
+		want    *px500.CommentsPage
+	}{
+		0: {
+			params: &px500.CommentsRequest{
+				PhotoID: photoID1,
+				Nested:  true,
+			},
+			want: commentsForPageForPhoto(photoID1, true),
+		},
+
+		1: {
+			params: &px500.CommentsRequest{
+				PhotoID: photoID1,
+				Nested:  false,
+			},
+			want: commentsForPageForPhoto(photoID1, false),
+		},
+
+		2: {
+			params: nil, wantErr: true,
+		},
+
+		// No PhotoID
+		3: {
+			params: &px500.CommentsRequest{
+				PhotoID: "",
+				Nested:  true,
+			},
+			wantErr: true,
+		},
+
+		4: {
+			params: &px500.CommentsRequest{
+				PhotoID: "",
+			},
+			wantErr: true,
+		},
+	}
+
+	for i, tt := range tests {
+		lchan, cancelFn, err := client.CommentsForPhoto(tt.params)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("#%d want a non-nil error", i)
+			}
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("#%d: gotErr: %v", i, err)
+			continue
+		}
+
+		got := <-lchan
+		if got == nil {
+			t.Errorf("#%d expected a non-nil page", i)
+			continue
+		}
+
+		if err := got.Err; err != nil {
+			t.Errorf("#%d err: %v", i, err)
+			continue
+		}
+
+		cancelFn()
+
+		gotBlob := jsonMarshal(got)
+		wantBlob := jsonMarshal(tt.want)
+
 		if !bytes.Equal(gotBlob, wantBlob) {
 			t.Errorf("#%d:\ngotBlob:  %s\nwantBlob: %s", i, gotBlob, wantBlob)
 		}
@@ -205,9 +293,10 @@ type testBackend struct {
 var errUnimplemented = errors.New("unimplemented")
 
 const (
-	listPhotosRoute   = "list-photos"
-	searchPhotosRoute = "search-photos"
-	photoByIDRoute    = "photo-by-id"
+	listPhotosRoute       = "list-photos"
+	searchPhotosRoute     = "search-photos"
+	commentsForPhotoRoute = "comments-for-photo"
+	photoByIDRoute        = "photo-by-id"
 
 	consumerKey1 = "consumer-key-1"
 	consumerKey2 = "consumer-key-2"
@@ -234,6 +323,8 @@ func (tb *testBackend) RoundTrip(req *http.Request) (*http.Response, error) {
 		return tb.listPhotosRoundTrip(req)
 	case searchPhotosRoute:
 		return tb.searchPhotosRoundTrip(req)
+	case commentsForPhotoRoute:
+		return tb.commentsForPhotoRoundTrip(req)
 	case photoByIDRoute:
 		return tb.photoByIDRoundTrip(req)
 	default:
@@ -250,6 +341,10 @@ func searchPhotosPath(term string) string {
 	return fmt.Sprintf("./testdata/search-%s.json", escapedTerm)
 }
 
+func searchCommentsForPhoto(photoID string) string {
+	return fmt.Sprintf("./testdata/commentsForPhoto-%s.json", photoID)
+}
+
 func searchPhotosPageFromFile(term string) *px500.PhotoPage {
 	path := searchPhotosPath(term)
 	return photoPageFromFile(path)
@@ -258,6 +353,27 @@ func searchPhotosPageFromFile(term string) *px500.PhotoPage {
 func listPhotosPageFromFile(id string) *px500.PhotoPage {
 	path := listPhotosPath(id)
 	return photoPageFromFile(path)
+}
+
+func commentsForPageForPhotoPath(photoID string, nested bool) string {
+	if nested {
+		photoID += "-nested"
+	}
+	return fmt.Sprintf("./testdata/commentsForPhoto-%s.json", photoID)
+}
+
+func commentsForPageForPhoto(photoID string, nested bool) *px500.CommentsPage {
+	path := commentsForPageForPhotoPath(photoID, nested)
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	sav := new(px500.CommentsPage)
+	if err := json.Unmarshal(data, sav); err != nil {
+		return nil
+	}
+	return sav
+
 }
 
 func photoPageFromFile(path string) *px500.PhotoPage {
@@ -344,6 +460,34 @@ func (tb *testBackend) searchPhotosRoundTrip(req *http.Request) (*http.Response,
 	}
 
 	return makeResp("200 OK", http.StatusOK, f), nil
+}
+
+func (tb *testBackend) commentsForPhotoRoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != "GET" {
+		msg := fmt.Sprintf("only accepting \"GET\" not %q", req.Method)
+		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
+	}
+
+	// Expecting the form:
+	//    /v1/photos/210717663/comments
+	splits := strings.Split(req.URL.Path, "/")
+	if len(splits) < 2 {
+		return makeResp("expecting the photoId", http.StatusBadRequest, http.NoBody), nil
+	}
+
+	photoID := splits[len(splits)-2]
+
+	query := req.URL.Query()
+	nested, _ := strconv.ParseBool(query.Get("nested"))
+	path := commentsForPageForPhotoPath(photoID, nested)
+
+	f, err := os.Open(path)
+	if err != nil {
+		return makeResp(err.Error(), http.StatusBadRequest, http.NoBody), nil
+	}
+
+	return makeResp("200 OK", http.StatusOK, f), nil
+
 }
 
 func makeResp(status string, code int, body io.ReadCloser) *http.Response {
