@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"testing"
 
@@ -70,6 +71,56 @@ func TestListPhotos(t *testing.T) {
 
 		gotBlob := jsonMarshal(got)
 		wantBlob := jsonMarshal(tt.want)
+		if !bytes.Equal(gotBlob, wantBlob) {
+			t.Errorf("#%d:\ngotBlob:  %s\nwantBlob: %s", i, gotBlob, wantBlob)
+		}
+	}
+}
+
+func TestPhotoSearch(t *testing.T) {
+	client, err := px500.NewClient()
+	if err != nil {
+		t.Fatalf("initializing the client: %v", err)
+	}
+
+	rt := &testBackend{route: searchPhotosRoute}
+	client.SetHTTPRoundTripper(rt)
+
+	tests := [...]struct {
+		req     *px500.PhotoSearch
+		wantErr bool
+		want    *px500.PhotoPage
+	}{
+		0: {
+			req: &px500.PhotoSearch{
+				Term:          "the universe",
+				LimitPerPage:  10,
+				MaxPageNumber: 2,
+			},
+			want: searchPhotosPageFromFile("the universe"),
+		},
+		1: {req: nil, wantErr: true},
+	}
+
+	for i, tt := range tests {
+		lchan, cancelFn, err := client.SearchPhotos(tt.req)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("#%d want a non-nil error", i)
+			}
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("#%d: gotErr: %v", i, err)
+			continue
+		}
+
+		got := <-lchan
+		cancelFn()
+
+		gotBlob := jsonMarshal(got)
+		wantBlob := jsonMarshal(tt.want)
 
 		if !bytes.Equal(gotBlob, wantBlob) {
 			t.Errorf("#%d:\ngotBlob:  %s\nwantBlob: %s", i, gotBlob, wantBlob)
@@ -89,13 +140,16 @@ type testBackend struct {
 var errUnimplemented = errors.New("unimplemented")
 
 const (
-	listPhotosRoute = "list-photos"
+	listPhotosRoute   = "list-photos"
+	searchPhotosRoute = "search-photos"
 )
 
 func (tb *testBackend) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch tb.route {
 	case listPhotosRoute:
 		return tb.listPhotosRoundTrip(req)
+	case searchPhotosRoute:
+		return tb.searchPhotosRoundTrip(req)
 	default:
 		return nil, errUnimplemented
 	}
@@ -105,9 +159,24 @@ func listPhotosPath(id string) string {
 	return fmt.Sprintf("./testdata/listPhotos-%s.json", id)
 }
 
+func searchPhotosPath(term string) string {
+	escapedTerm := url.QueryEscape(term)
+	return fmt.Sprintf("./testdata/search-%s.json", escapedTerm)
+}
+
+func searchPhotosPageFromFile(term string) *px500.PhotoPage {
+	path := searchPhotosPath(term)
+	return photoPageFromFile(path)
+}
+
 func listPhotosPageFromFile(id string) *px500.PhotoPage {
+	path := listPhotosPath(id)
+	return photoPageFromFile(path)
+}
+
+func photoPageFromFile(path string) *px500.PhotoPage {
 	sav := new(px500.PhotoPage)
-	data, err := ioutil.ReadFile(listPhotosPath(id))
+	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil
 	}
@@ -126,6 +195,24 @@ func (tb *testBackend) listPhotosRoundTrip(req *http.Request) (*http.Response, e
 	query := req.URL.Query()
 	featStr := query.Get("feature")
 	path := listPhotosPath(featStr)
+
+	f, err := os.Open(path)
+	if err != nil {
+		return makeResp(err.Error(), http.StatusBadRequest, http.NoBody), nil
+	}
+
+	return makeResp("200 OK", http.StatusOK, f), nil
+}
+
+func (tb *testBackend) searchPhotosRoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != "GET" {
+		msg := fmt.Sprintf("only accepting \"GET\" not %q", req.Method)
+		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
+	}
+
+	query := req.URL.Query()
+	term := query.Get("term")
+	path := searchPhotosPath(term)
 
 	f, err := os.Open(path)
 	if err != nil {

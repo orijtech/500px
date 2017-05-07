@@ -59,44 +59,6 @@ const (
 	SortTakenAt        SortOrder = "taken_at"
 )
 
-type PhotoRequest struct {
-	// Feature is always required.
-	Feature Feature `json:"feature"`
-
-	UserID   string    `json:"user_id"`
-	Username string    `json:"username"`
-	Only     string    `json:"only"`
-	Exclude  string    `json:"exclude"`
-	SortBy   SortOrder `json:"sort"`
-
-	ImageSize Size `json:"image_size"`
-
-	IncludeStore Store    `json:"include_store"`
-	Tags         []string `json:"tags"`
-
-	// PageNumber is the specific page in the photo stream.
-	// Note that Page numbering is 1-based.
-	PageNumber int64 `json:"page"`
-
-	LimitPerPage int `json:"rpp"`
-
-	MaxPageNumber int64 `json:"-"`
-}
-
-func (p *PhotoRequest) adjustPaginationParams() {
-	if p.PageNumber <= 0 {
-		p.PageNumber = 1
-	}
-
-	if p.LimitPerPage <= 0 {
-		p.LimitPerPage = 20
-	}
-
-	if p.LimitPerPage >= 100 {
-		p.LimitPerPage = 100
-	}
-}
-
 type Store string
 
 const (
@@ -369,20 +331,6 @@ type Photo struct {
 	FeaturedInEditorsChoice bool `json:"editors_choice"`
 }
 
-type Category int
-
-type PhotoPage struct {
-	Feature     Feature                `json:"feature"`
-	Filters     map[string]interface{} `json:"filters"`
-	CurrentPage int                    `json:"current_page"`
-	TotalPage   int                    `json:"total_page"`
-	TotalItems  int                    `json:"total_items"`
-	Photos      []*Photo               `json:"photos"`
-
-	Err        error
-	PageNumber int64
-}
-
 type Comment struct {
 	ID       string   `json:"id"`
 	Body     string   `json:"body"`
@@ -443,51 +391,102 @@ func (s *Sex) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-type GalleryKind uint
+type Category string
 
 const (
-	// Any photo on 500px.
-	GalleryGeneral GalleryKind = 0
-
-	// Marketplace photos.
-	GalleryLightbox GalleryKind = 1
-
-	// Photos displayed on the portfolio page.
-	GalleryPortfolio GalleryKind = 3
-
-	// Photos uploaded by the gallery owner.
-	GalleryProfile GalleryKind = 4
-
-	// Photos favorited by the gallery owner.
-	GalleryFavorite GalleryKind = 5
+	CategoryUncategorized       Category = "Uncategorized"
+	CategoryAbstract            Category = "Abstract"
+	CategoryAnimals             Category = "Animals"
+	CategoryBlackAndWhite       Category = "Black and white"
+	CategoryCelebrities         Category = "Celebrities"
+	CategoryCityAndArchitecture Category = "City and Architecture"
+	CategoryCommercial          Category = "Commercial"
+	CategoryConcert             Category = "Concert"
+	CategoryFamily              Category = "Family"
+	CategoryFashion             Category = "Fashion"
+	CategoryFilm                Category = "Film"
+	CategoryFineArt             Category = "Fine Art"
+	CategoryFood                Category = "Food"
+	CategoryJournalism          Category = "Journalism"
+	CategoryLandscapes          Category = "Landscapes"
+	CategoryMacro               Category = "Macro"
+	CategoryNature              Category = "Nature"
+	CategoryNude                Category = "Nude"
+	CategoryPeople              Category = "People"
+	CategoryPerformingArts      Category = "Performing Arts"
+	CategorySport               Category = "Sport"
+	CategoryStillLife           Category = "Still Life"
+	CategoryStreet              Category = "Street"
+	CategoryTransportation      Category = "Transportation"
+	CategoryTravel              Category = "Travel"
+	CategoryUnderwater          Category = "Underwater"
+	CategoryUrbanExploration    Category = "Urban Exploration"
+	CategoryWedding             Category = "Wedding"
 )
 
-type Gallery struct {
-	ID          string `json:"id"`
-	UserID      string `json:"user_id"`
-	Title       string `json:"name"`
-	Description string `json:"description"`
-	Subtitle    string `json:"subtitle"`
+var categoryToIntMap = map[Category]int{
+	CategoryUncategorized:       0,
+	CategoryAbstract:            10,
+	CategoryAnimals:             11,
+	CategoryBlackAndWhite:       5,
+	CategoryCelebrities:         1,
+	CategoryCityAndArchitecture: 9,
+	CategoryCommercial:          15,
+	CategoryConcert:             16,
+	CategoryFamily:              20,
+	CategoryFashion:             14,
+	CategoryFilm:                2,
+	CategoryFineArt:             24,
+	CategoryFood:                23,
+	CategoryJournalism:          3,
+	CategoryLandscapes:          8,
+	CategoryMacro:               12,
+	CategoryNature:              18,
+	CategoryNude:                4,
+	CategoryPeople:              7,
+	CategoryPerformingArts:      19,
+	CategorySport:               17,
+	CategoryStillLife:           6,
+	CategoryStreet:              21,
+	CategoryTransportation:      26,
+	CategoryTravel:              13,
+	CategoryUnderwater:          22,
+	CategoryUrbanExploration:    27,
+	CategoryWedding:             25,
+}
 
-	ItemCount uint64 `json:"items_count"`
-	Private   bool   `json:"privacy"`
+var intToCategoryMap map[int]Category
 
-	Kind GalleryKind `json:"kind"`
+func init() {
+	intToCategoryMap = make(map[int]Category)
+	for category, i := range categoryToIntMap {
+		intToCategoryMap[i] = category
+	}
+}
 
-	CreatedAt *time.Time `json:"created_at"`
-	UpdatedAt *time.Time `json:"updated_at"`
+func intToCategory(i int) Category {
+	return intToCategoryMap[i]
+}
 
-	CustomSlug string     `json:"custom_path"`
-	FeaturedAt *time.Time `json:"featured_at"`
+func categoryToInt(cat Category) int {
+	return categoryToIntMap[cat]
+}
 
-	FeaturedInEditorsChoice bool `json:"editors_choice"`
+func (cat *Category) UnmarshalJSON(b []byte) error {
+	str := string(b)
+	// Firstly try as an int
+	if iv, err := strconv.ParseInt(str, 10, 32); err == nil {
+		// Well and good an integer was parsed
+		*cat = intToCategoryMap[int(iv)]
+		return nil
+	}
 
-	// TokenSignature is set only for a private
-	// gallery URL and it is only returned if
-	// the request was made by the gallery owner.
-	TokenSignature string `json:"token"`
+	// Next fallback to string
+	var st string
+	err := json.Unmarshal(b, &st)
+	if err == nil {
+		*cat = Category(st)
+	}
 
-	LastAddedPhoto *Photo `json:"last_added_photo"`
-
-	User *User `json:"user"`
+	return err
 }

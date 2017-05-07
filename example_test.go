@@ -53,3 +53,41 @@ func Example_client_ListPhotos() {
 		fmt.Printf("\n\n")
 	}
 }
+
+func Example_client_PhotoSearch() {
+	client, err := px500.NewClient()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ps := &px500.PhotoSearch{
+		Term:          "the universe",
+		LimitPerPage:  10,
+		MaxPageNumber: 2,
+	}
+
+	pagesChan, cancelFn, err := client.PhotoSearch(ps)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	count := uint64(0)
+	for page := range pagesChan {
+		fmt.Printf("Page: #%d\n\n", page.PageNumber)
+		if err := page.Err; err != nil {
+			fmt.Printf("err: %v\n", err)
+			continue
+		}
+
+		for i, photo := range page.Photos {
+			count += 1
+			fmt.Printf("#%d: %#v\n\n", i, photo)
+		}
+
+		if count >= 13 {
+			cancelFn()
+		}
+		fmt.Printf("\n\n")
+	}
+}
