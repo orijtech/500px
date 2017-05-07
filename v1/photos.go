@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/orijtech/otils"
@@ -241,6 +242,36 @@ func (c *Client) SearchPhotos(ops *PhotoSearch) (resChan chan *PhotoPage, cancel
 	}()
 
 	return resChan, cancelFn, nil
+}
+
+var errEmptyPhotoID = errors.New("expecting a non-empty photoID")
+
+type PhotoWrap struct {
+	Photo *Photo `json:"photo"`
+}
+
+func (c *Client) PhotoByID(photoID string) (*Photo, error) {
+	if photoID == "" {
+		return nil, errEmptyPhotoID
+	}
+	qv := make(url.Values)
+	qv.Set("consumer_key", c.consumerKey())
+
+	fullURL := fmt.Sprintf("%s/photos/%s?%s", baseURL, photoID, qv.Encode())
+	req, err := http.NewRequest("GET", fullURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	slurp, _, err := c.doAuthAndRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	pwrap := new(PhotoWrap)
+	if err := json.Unmarshal(slurp, pwrap); err != nil {
+		return nil, err
+	}
+	return pwrap.Photo, nil
 }
 
 type LicenseType int

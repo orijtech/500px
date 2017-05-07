@@ -66,7 +66,7 @@ func Example_client_PhotoSearch() {
 		MaxPageNumber: 2,
 	}
 
-	pagesChan, cancelFn, err := client.PhotoSearch(ps)
+	pagesChan, cancelFn, err := client.SearchPhotos(ps)
 
 	if err != nil {
 		log.Fatal(err)
@@ -90,4 +90,18 @@ func Example_client_PhotoSearch() {
 		}
 		fmt.Printf("\n\n")
 	}
+}
+
+func Example_client_PhotoByID() {
+	client, err := px500.NewClient()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	photo, err := client.PhotoByID("210717663")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("The Photo's info: %#v\n", photo)
 }
