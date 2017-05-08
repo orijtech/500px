@@ -15,8 +15,10 @@
 package px500_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/orijtech/500px/v1"
 )
@@ -143,5 +145,54 @@ func Example_client_CommentsForPhoto() {
 			cancelFn()
 		}
 		fmt.Printf("\n\n")
+	}
+}
+
+func Example_client_UploadPhoto() {
+	client, err := px500.NewOAuth1ClientFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	f, err := os.Open("./v1/testdata/sfPanorama.jpeg")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	photo, err := client.UploadPhoto(&px500.UploadRequest{
+		Body:     f,
+		Filename: "billion dollar view",
+		PhotoInfo: &px500.Photo{
+			Title: "SF Panorama, Billion Dollar View",
+			ISO:   "iPhone 6",
+			Tags:  []string{"sf", "bayBridge", "California", "Piers"},
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Uploaded photo: %#v\n", photo)
+}
+
+func Example_oAuth1TokenFromEnv() {
+	token, err := px500.OAuth1AuthorizationByEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	blob, _ := json.Marshal(token)
+
+	outpath := "500px-credentials.json"
+	f, err := os.Create(outpath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(blob); err == nil {
+		fmt.Printf("Successfully saved the JSON credentials to %q\n", outpath)
+	} else {
+		fmt.Printf("err: %v\n", err)
 	}
 }
