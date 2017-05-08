@@ -86,6 +86,7 @@ type Client struct {
 	rt http.RoundTripper
 
 	_consumerKey string
+	_accessKey   string
 }
 
 func NewClient(keys ...string) (*Client, error) {
@@ -96,7 +97,7 @@ func NewClient(keys ...string) (*Client, error) {
 	return NewClientFromEnv()
 }
 
-var env500PxAPIKey = "FIVE00_PX_API_KEY"
+var env500PxAPIKey = "PX500_API_KEY"
 
 func NewClientFromEnv() (*Client, error) {
 	consumerKey := strings.TrimSpace(os.Getenv(env500PxAPIKey))
@@ -133,6 +134,19 @@ func (c *Client) SetHTTPRoundTripper(rt http.RoundTripper) {
 	defer c.Unlock()
 
 	c.rt = rt
+}
+
+func (c *Client) SetAccessKey(key string) {
+	c.Lock()
+	c._accessKey = key
+	c.Unlock()
+}
+
+func (c *Client) accessKey() string {
+	c.RLock()
+	defer c.RUnlock()
+
+	return c._accessKey
 }
 
 func (c *Client) consumerKey() string {
@@ -258,78 +272,6 @@ func (c *Client) ListPhotos(oreq *PhotoRequest) (pagesChan chan *PhotoPage, canc
 }
 
 type Camera string
-
-type Image struct {
-}
-
-type Photo struct {
-	ID     int64 `json:"id"`
-	UserID int64 `json:"user_id"`
-
-	Title        otils.NullableString `json:"name"`
-	Description  otils.NullableString `json:"description"`
-	Camera       otils.NullableString `json:"camera"`
-	Lens         otils.NullableString `json:"lens"`
-	FocalLength  otils.NullableString `json:"focal_length"`
-	ISO          otils.NullableString `json:"iso"`
-	ShutterSpeed otils.NullableString `json:"shutter_speed"`
-	Aperture     otils.NullableString `json:"aperture"`
-	ViewCount    uint64               `json:"times_viewed"`
-	Rating       float32              `json:"rating"`
-	Status       int                  `json:"status"`
-	CreatedAt    *time.Time           `json:"created_at"`
-	Category     Category             `json:"category"`
-	Location     otils.NullableString `json:"location"`
-
-	HighResolutionUploaded int `json:"high_res_uploaded"`
-
-	Private bool `json:"privacy"`
-
-	Latitude  float32    `json:"latitude"`
-	Longitude float32    `json:"longitude"`
-	TakenAt   *time.Time `json:"taken_at"`
-	ForSale   bool       `json:"for_sale"`
-
-	Width  int `json:"width"`
-	Height int `json:"height"`
-
-	VoteCount      uint64 `json:"votes_count"`
-	FavoritesCount uint64 `json:"favorites_count"`
-	CommentCount   uint64 `json:"comments_count"`
-
-	NSFW bool `json:"nsfw"`
-
-	SalesCount uint64 `json:"sales_count"`
-
-	HighestRating float32 `json:"highest_rating"`
-
-	HighestRatingDate *time.Time `json:"highest_rating_date"`
-
-	Converted otils.NumericBool `json:"converted"`
-
-	Images []*Image `json:"images"`
-
-	Author *User `json:"user"`
-
-	GalleryCount uint64 `json:"galleries_count"`
-
-	Feature Feature `json:"feature"`
-
-	CanvasPrint bool `json:"store_print"`
-	InDownload  bool `json:"store_download"`
-
-	// Voted reports whether the currently
-	// authenticated user has voted on this photo.
-	Voted bool `json:"voted"`
-
-	// Purchased reports whether the currently
-	// authenticated user has purchased this photo.
-	Purchased bool `json:"purchased"`
-
-	Comments []*Comment `json:"comments"`
-
-	FeaturedInEditorsChoice bool `json:"editors_choice"`
-}
 
 type User struct {
 	ID        int64  `json:"id"`

@@ -278,7 +278,70 @@ func TestPhotoByID(t *testing.T) {
 			t.Errorf("#%d:\ngotBlob:  %s\nwantBlob: %s", i, gotBlob, wantBlob)
 		}
 	}
+}
 
+func fromFile(path string) io.Reader {
+	f, _ := os.Open(path)
+	return f
+}
+
+func TestUploadPhoto(t *testing.T) {
+	client, err := px500.NewClient(consumerKey2)
+	if err != nil {
+		t.Fatalf("initializing the client: %v", err)
+	}
+
+	rt := &testBackend{route: uploadPhotoRoute}
+	client.SetHTTPRoundTripper(rt)
+
+	tests := [...]struct {
+		req     *px500.UploadRequest
+		wantErr bool
+		want    *px500.Photo
+	}{
+		0: {
+			req: &px500.UploadRequest{
+				Body: fromFile("./testdata/500pxFavicon.ico"),
+				PhotoInfo: &px500.Photo{
+					Title:       "500pxFavicon.ico",
+					Description: "Test photo blob A",
+					Tags:        []string{"favicon"},
+				},
+			},
+			want: photoFromFileByID(photoID1),
+		},
+		1: {
+			req:     nil,
+			wantErr: true,
+		},
+	}
+
+	for i, tt := range tests {
+		photo, err := client.UploadPhoto(tt.req)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("#%d want a non-nil error", i)
+			}
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("#%d: gotErr: %v", i, err)
+			continue
+		}
+
+		if photo == nil {
+			t.Errorf("#%d: photo: %#v", i, photo)
+			continue
+		}
+
+		gotBlob := jsonMarshal(photo)
+		wantBlob := jsonMarshal(tt.want)
+
+		if !bytes.Equal(gotBlob, wantBlob) {
+			t.Errorf("#%d:\ngotBlob:  %s\nwantBlob: %s", i, gotBlob, wantBlob)
+		}
+	}
 }
 
 func jsonMarshal(v interface{}) []byte {
@@ -297,6 +360,7 @@ const (
 	searchPhotosRoute     = "search-photos"
 	commentsForPhotoRoute = "comments-for-photo"
 	photoByIDRoute        = "photo-by-id"
+	uploadPhotoRoute      = "upload-photo"
 
 	consumerKey1 = "consumer-key-1"
 	consumerKey2 = "consumer-key-2"
@@ -312,12 +376,6 @@ func authorizedConsumerKey(ckey string) bool {
 }
 
 func (tb *testBackend) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Well firstly we've got to check if they are authenticated
-	query := req.URL.Query()
-	if !authorizedConsumerKey(query.Get("consumer_key")) {
-		return makeResp("Unauthorized consumer_key", http.StatusUnauthorized, nil), nil
-	}
-
 	switch tb.route {
 	case listPhotosRoute:
 		return tb.listPhotosRoundTrip(req)
@@ -327,6 +385,8 @@ func (tb *testBackend) RoundTrip(req *http.Request) (*http.Response, error) {
 		return tb.commentsForPhotoRoundTrip(req)
 	case photoByIDRoute:
 		return tb.photoByIDRoundTrip(req)
+	case uploadPhotoRoute:
+		return tb.uploadPhotoRoundTrip(req)
 	default:
 		return nil, errUnimplemented
 	}
@@ -389,6 +449,9 @@ func photoPageFromFile(path string) *px500.PhotoPage {
 }
 
 func (tb *testBackend) listPhotosRoundTrip(req *http.Request) (*http.Response, error) {
+	if !authorizedConsumerKey(req.URL.Query().Get("consumer_key")) {
+		return makeResp("Unauthorized consumer_key", http.StatusUnauthorized, nil), nil
+	}
 	if req.Method != "GET" {
 		msg := fmt.Sprintf("only accepting \"GET\" not %q", req.Method)
 		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
@@ -407,6 +470,9 @@ func (tb *testBackend) listPhotosRoundTrip(req *http.Request) (*http.Response, e
 }
 
 func (tb *testBackend) photoByIDRoundTrip(req *http.Request) (*http.Response, error) {
+	if !authorizedConsumerKey(req.URL.Query().Get("consumer_key")) {
+		return makeResp("Unauthorized consumer_key", http.StatusUnauthorized, nil), nil
+	}
 	if req.Method != "GET" {
 		msg := fmt.Sprintf("only accepting \"GET\" not %q", req.Method)
 		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
@@ -445,6 +511,9 @@ func photoFromFileByID(id string) *px500.Photo {
 }
 
 func (tb *testBackend) searchPhotosRoundTrip(req *http.Request) (*http.Response, error) {
+	if !authorizedConsumerKey(req.URL.Query().Get("consumer_key")) {
+		return makeResp("Unauthorized consumer_key", http.StatusUnauthorized, nil), nil
+	}
 	if req.Method != "GET" {
 		msg := fmt.Sprintf("only accepting \"GET\" not %q", req.Method)
 		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
@@ -463,6 +532,9 @@ func (tb *testBackend) searchPhotosRoundTrip(req *http.Request) (*http.Response,
 }
 
 func (tb *testBackend) commentsForPhotoRoundTrip(req *http.Request) (*http.Response, error) {
+	if !authorizedConsumerKey(req.URL.Query().Get("consumer_key")) {
+		return makeResp("Unauthorized consumer_key", http.StatusUnauthorized, nil), nil
+	}
 	if req.Method != "GET" {
 		msg := fmt.Sprintf("only accepting \"GET\" not %q", req.Method)
 		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
@@ -488,6 +560,59 @@ func (tb *testBackend) commentsForPhotoRoundTrip(req *http.Request) (*http.Respo
 
 	return makeResp("200 OK", http.StatusOK, f), nil
 
+}
+
+func (tb *testBackend) uploadPhotoRoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != "POST" {
+		msg := fmt.Sprintf("only accepting \"POST\" not %q", req.Method)
+		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
+	}
+
+	// Expecting the form:
+	//    v1/photos/upload?name=Portrait&description=Studio%20portrait&privacy=0
+	query := req.URL.Query()
+	if len(query) < 1 {
+		msg := "expecting atleast one key=value pair in the query string"
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+
+	name := query.Get("name")
+	if name == "" {
+		msg := `expecting atleast "name"`
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+
+	// Otherwise good to go
+	if err := req.ParseMultipartForm(10e9); err != nil {
+		msg := fmt.Sprintf("parsing multipart form, got err: %v", err)
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+
+	mf, _, err := req.FormFile("file")
+	if err != nil {
+		msg := fmt.Sprintf("parsing multipart file, got err: %v", err)
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+	n, err := io.Copy(ioutil.Discard, mf)
+	if err != nil {
+		msg := fmt.Sprintf("reading multipart file, got err: %v", err)
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+
+	// Arbitrarily expecting at least 80bytes for a photo
+	if n < 80 {
+		msg := "expecting atleast 80bytes for a photo"
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+
+	// Otherwise good to go
+	path := photoByIDPath(photoID1)
+	f, err := os.Open(path)
+	if err != nil {
+		return makeResp(err.Error(), http.StatusBadRequest, http.NoBody), nil
+	}
+
+	return makeResp("200 OK", http.StatusOK, f), nil
 }
 
 func makeResp(status string, code int, body io.ReadCloser) *http.Response {

@@ -148,3 +148,33 @@ func retrieveCommentsForPhoto() {
 	}
 }
 ```
+
+* Upload a photo
+```go
+func uploadAPhoto() {
+	f, err := os.Open("./v1/testdata/sfPanorama.jpeg")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	client, err := px500.NewOAuth1ClientFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	photo, err := client.UploadPhoto(&px500.UploadRequest{
+		Body:     f,
+		Filename: "billion dollar view",
+		PhotoInfo: &px500.Photo{
+			Title: "SF Panorama, Billion Dollar View",
+			ISO:   "iPhone 6",
+			Tags:  []string{"sf", "bayBridge", "California", "Piers"},
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Uploaded photo: %#v\n", photo)
+}
+```

@@ -18,11 +18,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/orijtech/otils"
+
+	"github.com/odeke-em/go-uuid"
 )
 
 type PhotoRequest struct {
@@ -59,6 +64,75 @@ type PhotoPage struct {
 
 	Err        error
 	PageNumber int64
+}
+
+type Photo struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+
+	Title        otils.NullableString `json:"name"`
+	Description  otils.NullableString `json:"description"`
+	Camera       otils.NullableString `json:"camera"`
+	Lens         otils.NullableString `json:"lens"`
+	FocalLength  otils.NullableString `json:"focal_length"`
+	ISO          otils.NullableString `json:"iso"`
+	ShutterSpeed otils.NullableString `json:"shutter_speed"`
+	Aperture     otils.NullableString `json:"aperture"`
+	ViewCount    uint64               `json:"times_viewed"`
+	Rating       float32              `json:"rating"`
+	Status       int                  `json:"status"`
+	CreatedAt    *time.Time           `json:"created_at"`
+	Category     Category             `json:"category"`
+	Location     otils.NullableString `json:"location"`
+
+	HighResolutionUploaded int `json:"high_res_uploaded"`
+
+	Private bool `json:"privacy"`
+
+	Latitude  float32    `json:"latitude"`
+	Longitude float32    `json:"longitude"`
+	TakenAt   *time.Time `json:"taken_at"`
+	ForSale   bool       `json:"for_sale"`
+
+	Width  int `json:"width"`
+	Height int `json:"height"`
+
+	VoteCount      uint64 `json:"votes_count"`
+	FavoritesCount uint64 `json:"favorites_count"`
+	CommentCount   uint64 `json:"comments_count"`
+
+	NSFW bool `json:"nsfw"`
+
+	SalesCount uint64 `json:"sales_count"`
+
+	HighestRating float32 `json:"highest_rating"`
+
+	HighestRatingDate *time.Time `json:"highest_rating_date"`
+
+	Converted otils.NumericBool `json:"converted"`
+
+	Author *User `json:"user"`
+
+	GalleryCount uint64 `json:"galleries_count"`
+
+	Feature Feature `json:"feature"`
+
+	CanvasPrint bool `json:"store_print"`
+	InDownload  bool `json:"store_download"`
+
+	// Voted reports whether the currently
+	// authenticated user has voted on this photo.
+	Voted bool `json:"voted"`
+
+	// Purchased reports whether the currently
+	// authenticated user has purchased this photo.
+	Purchased bool `json:"purchased"`
+
+	Comments []*Comment `json:"comments"`
+
+	FeaturedInEditorsChoice bool `json:"editors_choice"`
+
+	Tags []string `json:"tags"`
 }
 
 type GalleryKind uint
@@ -272,6 +346,122 @@ func (c *Client) PhotoByID(photoID string) (*Photo, error) {
 		return nil, err
 	}
 	return pwrap.Photo, nil
+}
+
+type UploadRequest struct {
+	Filename    string    `json:"filename"`
+	Body        io.Reader `json:"-"`
+	PhotoInfo   *Photo    `json:"photo"`
+	ContentType string    `json:"content_type"`
+}
+
+func (ur *UploadRequest) nonBlankFilename() string {
+	fname := strings.TrimSpace(ur.Filename)
+	if fname == "" {
+		fname = uuid.NewRandom().String()
+	}
+	return fname
+}
+
+var (
+	errNilBody  = errors.New("expecting a non-nil body")
+	errNilPhoto = errors.New("expecting non-nil photo information")
+)
+
+func (ureq *UploadRequest) Validate() error {
+	if ureq == nil || ureq.Body == nil {
+		return errNilBody
+	}
+	if ureq.PhotoInfo == nil {
+		return errNilPhoto
+	}
+	return nil
+}
+
+func (c *Client) UploadPhoto(ureq *UploadRequest) (photo *Photo, err error) {
+	if err := ureq.Validate(); err != nil {
+		return nil, err
+	}
+
+	qv, err := otils.ToURLValues(ureq.PhotoInfo)
+	if err != nil {
+		// TODO: Figure out if we can clean up the
+		// previously created upload initialization.
+		return nil, err
+	}
+
+	prc, pwc := io.Pipe()
+	mpartW := multipart.NewWriter(pwc)
+
+	go func() {
+		body := ureq.Body
+		formFile, err := mpartW.CreateFormFile("file", ureq.nonBlankFilename())
+		if err != nil {
+			return
+		}
+		_, _ = io.Copy(formFile, body)
+
+		contentType := strings.TrimSpace(ureq.ContentType)
+		if contentType == "" {
+			contentType, _, _ = fDetectContentType(body)
+		}
+		writeStringFormField(mpartW, "Content-Type", contentType)
+
+		_ = mpartW.Close()
+		_ = pwc.Close()
+	}()
+
+	fullURL := fmt.Sprintf("%s/photos/upload?%s", baseURL, qv.Encode())
+	req, err := http.NewRequest("POST", fullURL, prc)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", mpartW.FormDataContentType())
+
+	slurp, _, err := c.doAuthAndRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	pwrap := new(PhotoWrap)
+	if err := json.Unmarshal(slurp, pwrap); err != nil {
+		return nil, err
+	}
+
+	return pwrap.Photo, nil
+}
+
+func writeStringFormField(mw *multipart.Writer, key, value string) {
+	if value != "" {
+		w, err := mw.CreateFormField(key)
+		if err == nil {
+			io.WriteString(w, value)
+		}
+	}
+}
+
+func fDetectContentType(r io.Reader) (ct string, err error, seekable bool) {
+	if r == nil {
+		return "", errNilBody, false
+	}
+
+	seeker, seekable := r.(io.Seeker)
+	if !seekable {
+		// Unfortunately we can't sniff it
+		// without modifying the content of the body
+		return "", nil, false
+	}
+
+	sniffBuf := make([]byte, 512)
+	n, err := io.ReadAtLeast(r, sniffBuf, 1)
+	if err != nil {
+		return "", err, seekable
+	}
+
+	// Otherwise seek back
+	_, _ = seeker.Seek(int64(n), io.SeekStart)
+	contentType := http.DetectContentType(sniffBuf)
+	return contentType, nil, seekable
 }
 
 type LicenseType int
