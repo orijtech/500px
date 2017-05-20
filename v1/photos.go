@@ -480,6 +480,49 @@ func (c *Client) UpdatePhoto(ureq *UpdateRequest) (*Photo, error) {
 	return pwrap.Photo, nil
 }
 
+func (c *Client) DeletePhoto(photoID string) error {
+	photoID = strings.TrimSpace(photoID)
+	if photoID == "" {
+		return errEmptyPhotoID
+	}
+
+	fullURL := fmt.Sprintf("%s/photos/%s", baseURL, photoID)
+	req, err := http.NewRequest("DELETE", fullURL, nil)
+	if err != nil {
+		return err
+	}
+
+	slurp, _, err := c.doAuthAndRequest(req)
+	if err != nil {
+		return err
+	}
+
+	dres := new(deleteResponse)
+	if err := json.Unmarshal(slurp, dres); err != nil {
+		return err
+	}
+	if !otils.StatusOK(dres.Code_) {
+		return dres
+	}
+	return nil
+}
+
+type deleteResponse struct {
+	Message string `json:"message"`
+	Code_   int    `json:"status"`
+	Err     string `json:"error"`
+}
+
+var _ error = (*deleteResponse)(nil)
+
+func (dres *deleteResponse) Error() string {
+	return dres.Err
+}
+
+func (dres *deleteResponse) Code() int {
+	return dres.Code_
+}
+
 func writeStringFormField(mw *multipart.Writer, key, value string) {
 	if value != "" {
 		w, err := mw.CreateFormField(key)

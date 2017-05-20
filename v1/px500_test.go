@@ -421,6 +421,52 @@ func TestUpdatePhoto(t *testing.T) {
 	}
 }
 
+func TestDeletePhoto(t *testing.T) {
+	client, err := px500.NewClient(consumerKey2)
+	if err != nil {
+		t.Fatalf("initializing the client: %v", err)
+	}
+
+	rt := &testBackend{route: deletePhotoRoute}
+	client.SetHTTPRoundTripper(rt)
+
+	tests := [...]struct {
+		id      string
+		wantErr string
+	}{
+		0: {
+			id: photoID1,
+		},
+
+		1: {
+			id:      "    ",
+			wantErr: "empty",
+		},
+
+		2: {
+			id:      "",
+			wantErr: "empty",
+		},
+	}
+
+	for i, tt := range tests {
+		err := client.DeletePhoto(tt.id)
+		if tt.wantErr != "" {
+			if err == nil {
+				t.Errorf("#%d: wanted non-nil error", i)
+			} else if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("#%d: gotErr: (%v) wantErr: (%v)", i, err, tt.wantErr)
+			}
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("#%d: err: %v", i, err)
+			continue
+		}
+	}
+}
+
 func jsonMarshal(v interface{}) []byte {
 	blob, _ := json.Marshal(v)
 	return blob
@@ -439,6 +485,7 @@ const (
 	photoByIDRoute        = "photo-by-id"
 	uploadPhotoRoute      = "upload-photo"
 	updatePhotoRoute      = "update-photo"
+	deletePhotoRoute      = "delete-photo"
 
 	consumerKey1 = "consumer-key-1"
 	consumerKey2 = "consumer-key-2"
@@ -467,6 +514,8 @@ func (tb *testBackend) RoundTrip(req *http.Request) (*http.Response, error) {
 		return tb.uploadPhotoRoundTrip(req)
 	case updatePhotoRoute:
 		return tb.updatePhotoRoundTrip(req)
+	case deletePhotoRoute:
+		return tb.deletePhotoRoundTrip(req)
 	default:
 		return nil, errUnimplemented
 	}
@@ -640,6 +689,57 @@ func (tb *testBackend) commentsForPhotoRoundTrip(req *http.Request) (*http.Respo
 
 	return makeResp("200 OK", http.StatusOK, f), nil
 
+}
+
+func (tb *testBackend) deletePhotoRoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != "DELETE" {
+		msg := fmt.Sprintf("only accepting \"DELETE\" not %q", req.Method)
+		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
+	}
+
+	// Expecting the form:
+	//    v1/photos/<PHOTO_ID>
+	splits := strings.Split(req.URL.Path, "/")
+	if len(splits) < 2 {
+		msg := "expecting the form v1/photos/<PHOTO_ID>"
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+	photoID := splits[len(splits)-1]
+
+	var resp map[string]interface{}
+	var code int
+	if !knownPhotoID(photoID) {
+		code = 404
+		resp = map[string]interface{}{
+			"status": code,
+			"error":  "failed to find the photo",
+		}
+	} else {
+		code = 200
+		resp = map[string]interface{}{
+			"status":  code,
+			"message": "successfully deleted the photo",
+		}
+	}
+
+	prc, pwc := io.Pipe()
+	go func() {
+		defer pwc.Close()
+
+		blob, _ := json.MarshalIndent(resp, "", "  ")
+		pwc.Write(blob)
+	}()
+
+	return makeResp(fmt.Sprintf("%d", code), code, prc), nil
+}
+
+func knownPhotoID(id string) bool {
+	switch id {
+	case photoID1, photoID2:
+		return true
+	default:
+		return false
+	}
 }
 
 func (tb *testBackend) updatePhotoRoundTrip(req *http.Request) (*http.Response, error) {

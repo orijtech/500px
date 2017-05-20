@@ -162,9 +162,9 @@ func Example_client_UploadPhoto() {
 
 	photo, err := client.UploadPhoto(&px500.UploadRequest{
 		Body:     f,
-		Filename: "billion dollar view",
+		Filename: "Testing delete",
 		PhotoInfo: &px500.Photo{
-			Title: "SF Panorama, Billion Dollar View",
+			Title: "Testing delete",
 			ISO:   "iPhone 6",
 			Tags:  []string{"sf", "bayBridge", "California", "Piers"},
 		},
@@ -216,4 +216,17 @@ func Example_client_UpdatePhoto() {
 	}
 
 	fmt.Printf("Updated photo: %#v\n", photo)
+}
+
+func Example_client_DeletePhoto() {
+	client, err := px500.NewOAuth1ClientFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := client.DeletePhoto("212664703"); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Successfully deleted the photo!\n")
 }
