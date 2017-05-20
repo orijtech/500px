@@ -179,3 +179,27 @@ func uploadAPhoto() {
 	fmt.Printf("Uploaded photo: %#v\n", photo)
 }
 ```
+
+* Update a photo
+```go
+func updatePhoto() {
+	client, err := px500.NewOAuth1ClientFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	photo, err := client.UpdatePhoto(&px500.UpdateRequest{
+		PhotoID: "211020335",
+		Content: &px500.Photo{
+			Title:  "Updated in tests",
+			Tags:   []string{"tests", "api-client", "golang"},
+			Camera: "iphone 6",
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Updated photo: %#v\n", photo)
+}
+```

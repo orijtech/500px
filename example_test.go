@@ -196,3 +196,24 @@ func Example_oAuth1TokenFromEnv() {
 		fmt.Printf("err: %v\n", err)
 	}
 }
+
+func Example_client_UpdatePhoto() {
+	client, err := px500.NewOAuth1ClientFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	photo, err := client.UpdatePhoto(&px500.UpdateRequest{
+		PhotoID: "211020335",
+		Content: &px500.Photo{
+			Title:  "Updated in tests",
+			Tags:   []string{"tests", "api-client", "golang"},
+			Camera: "iphone 6",
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Updated photo: %#v\n", photo)
+}

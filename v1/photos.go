@@ -22,6 +22,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -418,6 +419,54 @@ func (c *Client) UploadPhoto(ureq *UploadRequest) (photo *Photo, err error) {
 	}
 	req.Header.Set("Content-Type", mpartW.FormDataContentType())
 
+	slurp, _, err := c.doAuthAndRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	pwrap := new(PhotoWrap)
+	if err := json.Unmarshal(slurp, pwrap); err != nil {
+		return nil, err
+	}
+
+	return pwrap.Photo, nil
+}
+
+type UpdateRequest struct {
+	PhotoID string `json:"photo_id"`
+	Content *Photo `json:"content"`
+}
+
+var blankPhoto Photo
+
+func (ureq *UpdateRequest) Validate() error {
+	if ureq == nil || strings.TrimSpace(ureq.PhotoID) == "" {
+		return errEmptyPhotoID
+	}
+	if ureq.Content == nil || reflect.DeepEqual(*ureq.Content, blankPhoto) {
+		return errNilPhoto
+	}
+	return nil
+}
+
+func (c *Client) UpdatePhoto(ureq *UpdateRequest) (*Photo, error) {
+	if err := ureq.Validate(); err != nil {
+		return nil, err
+	}
+
+	qv, err := otils.ToURLValues(ureq.Content)
+	if err != nil {
+		return nil, err
+	}
+	// Ensure that we take out any
+	// occurance of "id" in the query string.
+	qv.Del("id")
+
+	fullURL := fmt.Sprintf("%s/photos/%s?%s", baseURL, ureq.PhotoID, qv.Encode())
+	req, err := http.NewRequest("PUT", fullURL, nil)
+	if err != nil {
+		return nil, err
+	}
 	slurp, _, err := c.doAuthAndRequest(req)
 	if err != nil {
 		return nil, err

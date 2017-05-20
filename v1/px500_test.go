@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -344,6 +345,82 @@ func TestUploadPhoto(t *testing.T) {
 	}
 }
 
+func TestUpdatePhoto(t *testing.T) {
+	client, err := px500.NewClient(consumerKey2)
+	if err != nil {
+		t.Fatalf("initializing the client: %v", err)
+	}
+
+	rt := &testBackend{route: updatePhotoRoute}
+	client.SetHTTPRoundTripper(rt)
+
+	tests := [...]struct {
+		req     *px500.UpdateRequest
+		wantErr string
+	}{
+		0: {
+			req: &px500.UpdateRequest{
+				PhotoID: photoID1,
+				Content: &px500.Photo{
+					Title: "New Update 1",
+				},
+			},
+		},
+
+		// Ensure that the ID is removed before
+		// the request is sent to the backend.
+		1: {
+			req: &px500.UpdateRequest{
+				PhotoID: photoID2,
+				Content: &px500.Photo{
+					ID: 1456,
+
+					Description: "Wassup wassup?",
+				},
+			},
+		},
+
+		2: {
+			req: &px500.UpdateRequest{
+				PhotoID: photoID1,
+				Content: nil,
+			},
+			wantErr: "non-nil photo",
+		},
+
+		3: {
+			req: &px500.UpdateRequest{
+				PhotoID: photoID1,
+				Content: &px500.Photo{},
+			},
+			wantErr: "non-nil photo",
+		},
+	}
+
+	var blankPhoto px500.Photo
+	for i, tt := range tests {
+		res, err := client.UpdatePhoto(tt.req)
+		if tt.wantErr != "" {
+			if err == nil {
+				t.Errorf("#%d: wanted non-nil error", i)
+			} else if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("#%d: gotErr: (%v) wantErr: (%v)", i, err, tt.wantErr)
+			}
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("#%d: err: %v", i, err)
+			continue
+		}
+
+		// Expecting back a non-blank photo
+		if res == nil || reflect.DeepEqual(*res, blankPhoto) {
+			t.Errorf("#%d: expecting a non-blank photo back", i)
+		}
+	}
+}
+
 func jsonMarshal(v interface{}) []byte {
 	blob, _ := json.Marshal(v)
 	return blob
@@ -361,6 +438,7 @@ const (
 	commentsForPhotoRoute = "comments-for-photo"
 	photoByIDRoute        = "photo-by-id"
 	uploadPhotoRoute      = "upload-photo"
+	updatePhotoRoute      = "update-photo"
 
 	consumerKey1 = "consumer-key-1"
 	consumerKey2 = "consumer-key-2"
@@ -387,6 +465,8 @@ func (tb *testBackend) RoundTrip(req *http.Request) (*http.Response, error) {
 		return tb.photoByIDRoundTrip(req)
 	case uploadPhotoRoute:
 		return tb.uploadPhotoRoundTrip(req)
+	case updatePhotoRoute:
+		return tb.updatePhotoRoundTrip(req)
 	default:
 		return nil, errUnimplemented
 	}
@@ -560,6 +640,37 @@ func (tb *testBackend) commentsForPhotoRoundTrip(req *http.Request) (*http.Respo
 
 	return makeResp("200 OK", http.StatusOK, f), nil
 
+}
+
+func (tb *testBackend) updatePhotoRoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != "PUT" {
+		msg := fmt.Sprintf("only accepting \"PUT\" not %q", req.Method)
+		return makeResp(msg, http.StatusMethodNotAllowed, http.NoBody), nil
+	}
+
+	// Expecting the form:
+	//    v1/photos/<PHOTO_ID>?name=Portrait&description=Studio%20portrait&privacy=0
+	query := req.URL.Query()
+	if len(query) < 1 {
+		msg := "expecting atleast one key=value pair in the query string"
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+
+	pathSplits := strings.Split(req.URL.Path, "/")
+	if len(pathSplits) < 2 {
+		msg := "expecting the form v1/photos/<PHOTO_ID>"
+		return makeResp(msg, http.StatusBadRequest, http.NoBody), nil
+	}
+	photoID := pathSplits[len(pathSplits)-1]
+
+	// Otherwise good to go
+	path := photoByIDPath(photoID)
+	f, err := os.Open(path)
+	if err != nil {
+		return makeResp(err.Error(), http.StatusBadRequest, http.NoBody), nil
+	}
+
+	return makeResp("200 OK", http.StatusOK, f), nil
 }
 
 func (tb *testBackend) uploadPhotoRoundTrip(req *http.Request) (*http.Response, error) {
