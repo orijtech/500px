@@ -217,3 +217,16 @@ func Example_client_UpdatePhoto() {
 
 	fmt.Printf("Updated photo: %#v\n", photo)
 }
+
+func Example_client_DeletePhoto() {
+	client, err := px500.NewOAuth1ClientFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := client.DeletePhoto("212664703"); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Successfully deleted the photo!\n")
+}
