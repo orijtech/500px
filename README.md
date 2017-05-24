@@ -1,7 +1,22 @@
 # 500px
 Go API client for 500px
 
-## Usage
+## CLI
+```shell
+$ go get -u -v github.com/orijtech/500px/cmd/500px
+```
+
+### Uploading
+* By path
+```shell
+$ 500px upload --path ~/Desktop/hills.jpeg --description "Run view" --title "Hills this evening"
+```
+* From standard input
+```shell
+$ cat ~/Downloads/source.png | 500px upload --description "Turn up" --title "issa turn up" --tags vegas,evenings
+```
+
+## SDK custom usage
 
 * Preamble
 ```go
